@@ -4,6 +4,7 @@ from PyQt5.QtCore import QThread, pyqtSignal
 import speech_recognition as sr
 import subprocess
 import asyncio
+import re
 
 class ListenerThread(QThread):
     finished = pyqtSignal(str)
@@ -30,42 +31,87 @@ class ChatbotApp(QMainWindow):
         self.setWindowTitle("Voice Chatbot")
         self.setGeometry(100, 100, 600, 400)
 
-        # Main widget and layout
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         layout = QVBoxLayout()
         main_widget.setLayout(layout)
 
-        # Conversation display
         self.conversation = QTextEdit()
         self.conversation.setReadOnly(True)
         layout.addWidget(self.conversation)
 
-        # Listen button
         self.listen_button = QPushButton("Start Listening")
         self.listen_button.clicked.connect(self.start_listening)
         layout.addWidget(self.listen_button)
 
-        # Status label
         self.status_label = QLabel("")
         layout.addWidget(self.status_label)
 
-        # Initialize recognizer
         self.recognizer = sr.Recognizer()
+
+    async def get_install_commands(self, package):
+        prompt = f"""Generate only the exact Ubuntu/Debian terminal commands to install {package}. Format as a single command per line with no backticks, quotes, or explanations or numbers like 1. 2.. DO NOT NUMBER THE COMMANDS UNDER ANY CIRCUMSTANCES PLEASEEEEEEEEEEEEEE JUST PRINT OUT THE EXACT COMMANDS WITH NOTHING BEFORE OR AFTER IT ONE BY ONE PLEASEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE. Example format:
+wget https://example.com/package.deb
+sudo dpkg -i package.deb"""                   ## A little Exaggeration because why not also use the magic word (Please) so AI Overloads will be kinder to you.
+        
+        process = await asyncio.create_subprocess_exec(
+            "ollama", "run", "mistral", prompt,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0:
+            return []
+            
+        commands = []
+        for line in stdout.decode().strip().split('\n'):
+            line = line.strip()
+            if line and not line.startswith('```') and not line.startswith('#'):
+                commands.append(line)
+        return commands
+
+    async def run_command(self, command):
+        process = await asyncio.create_subprocess_shell(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        return process.returncode, stdout.decode(), stderr.decode()
+
+    async def install_package(self, package):
+        commands = await self.get_install_commands(package)
+        if not commands:
+            return f"Failed to get installation commands for {package}"
+            
+        results = []
+        for cmd in commands:
+            results.append(f"Running: {cmd}")
+            code, out, err = await self.run_command(cmd)
+            if code != 0:
+                results.append(f"Error: {err}")
+                return "\n".join(results)
+            if out:
+                results.append(out)
+                
+        results.append(f"Finished installing {package}")
+        return "\n".join(results)
 
     async def query_ollama(self, prompt):
         try:
-            result = await asyncio.create_subprocess_exec(
+            if prompt.lower().startswith("install "):
+                package = prompt.split(" ", 1)[1]
+                return await self.install_package(package)
+                
+            process = await asyncio.create_subprocess_exec(
                 "ollama", "run", "mistral", prompt,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
-            stdout, stderr = await result.communicate()
-            if result.returncode == 0:
+            stdout, stderr = await process.communicate()
+            if process.returncode == 0:
                 return stdout.decode().strip()
-            else:
-                return f"Error running Ollama: {stderr.decode()}"
+            return f"Error: {stderr.decode()}"
         except Exception as e:
-            return f"Exception occurred: {e}"
+            return f"Error: {str(e)}"
 
     def start_listening(self):
         self.listen_button.setEnabled(False)
