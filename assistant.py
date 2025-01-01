@@ -1,6 +1,8 @@
 import speech_recognition as sr
 import subprocess
 import asyncio
+import warnings
+warnings.filterwarnings("ignore") #for development needs , remove after testing
 
 async def query_ollama(prompt):
     """
@@ -21,8 +23,7 @@ async def query_ollama(prompt):
         print(f"Exception occurred: {e}")
         return "Error communicating with Ollama."
 
-async def listen_for_query():
-    recognizer = sr.Recognizer()
+async def listen_for_query(recognizer):
     with sr.Microphone() as source:
         print("Listening for your query...")
         audio = recognizer.listen(source)
@@ -31,10 +32,20 @@ async def listen_for_query():
         return user_query
 
 async def main():
-    user_query = await listen_for_query()
-    print("Querying Ollama...")
-    response = await query_ollama(user_query)
-    print(f"Ollama's response: {response}")
+    recognizer = sr.Recognizer()
+    while True:
+        try:
+            user_query = await listen_for_query(recognizer)
+            print("Querying Ollama...")
+            response = await query_ollama(user_query)
+            print(f"Ollama's response: {response}")
+        except sr.UnknownValueError:
+            print("Sorry, I couldn't understand what you said. Please try again.")
+        except sr.RequestError as e:
+            print(f"Error with speech recognition service: {e}")
+        except KeyboardInterrupt:
+            print("Exiting the chatbot.")
+            break
 
 if __name__ == "__main__":
     asyncio.run(main())
