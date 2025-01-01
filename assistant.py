@@ -3,24 +3,19 @@ import subprocess
 import asyncio
 import PySimpleGUI as sg
 import threading
+import time
 
 class ChatbotApp:
     def __init__(self):
-        # Define the layout for the GUI
         layout = [
             [sg.Multiline(size=(50, 20), key='-CONVERSATION-', disabled=True)],
             [sg.Button("Start Listening", key='-LISTEN-')],
             [sg.Text("", size=(50, 1), key='-STATUS-')]
         ]
-
-        # Create the window
         self.window = sg.Window("Voice Chatbot", layout)
         self.recognizer = sr.Recognizer()
-
+        
     async def query_ollama(self, prompt):
-        """
-        Send a prompt to the Ollama model (e.g., Mistral) and return the response.
-        """
         try:
             result = await asyncio.create_subprocess_exec(
                 "ollama", "run", "mistral", prompt,
@@ -36,27 +31,43 @@ class ChatbotApp:
 
     def listen_for_query(self):
         with sr.Microphone() as source:
-            self.update_conversation("Listening for your query...")
+            self.update_status("Listening for your query...")
             audio = self.recognizer.listen(source)
             user_query = self.recognizer.recognize_google(audio)
-            self.update_conversation(f"You said: {user_query}")
+            self.add_message("You", user_query)
             return user_query
 
     def handle_query(self):
-        user_query = self.listen_for_query()
-        self.update_conversation("Querying Ollama...")
-        response = asyncio.run(self.query_ollama(user_query))
-        self.update_conversation(f"Ollama's response: {response}")
+        try:
+            user_query = self.listen_for_query()
+            self.update_status("Processing...")
+            response = asyncio.run(self.query_ollama(user_query))
+            self.add_message("Vyn", response)
+        except Exception as e:
+            self.add_message("System", f"Error: {str(e)}")
+        finally:
+            self.update_status("")
 
     def start_listening(self):
-        # Run the handle_query function in a separate thread
-        threading.Thread(target=self.handle_query).start()
+        threading.Thread(target=self.handle_query, daemon=True).start()
 
-    def update_conversation(self, message):
-        # Update the conversation area with the new message
+    def add_message(self, speaker, message):
+        # Split existing text into lines
         current_text = self.window['-CONVERSATION-'].get()
-        self.window['-CONVERSATION-'].update(current_text + message + "\n")
-        self.window['-STATUS-'].update("")  # Clear status message
+        lines = current_text.split('\n') if current_text else []
+        
+        # Add new message with proper spacing
+        new_message = f"{speaker}: {message}"
+        if lines:
+            lines.extend(['', new_message])  # Add blank line between messages
+        else:
+            lines.append(new_message)
+        
+        # Update window with reformatted text
+        self.window['-CONVERSATION-'].update('\n'.join(lines))
+
+    def update_status(self, message):
+        self.window['-STATUS-'].update(message)
 
     def run(self):
         while True:
@@ -65,7 +76,6 @@ class ChatbotApp:
                 break
             elif event == '-LISTEN-':
                 self.start_listening()
-
         self.window.close()
 
 if __name__ == "__main__":
