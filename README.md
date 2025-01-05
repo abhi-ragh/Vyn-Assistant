@@ -19,12 +19,14 @@ A PyQt5-based voice assistant that uses Ollama's Mistral model to help Linux use
 ## Installation
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/voice-assistant.git
-cd voice-assistant
-
+git clone https://github.com/abhi-ragh/Vyn-Assistant.git
+cd Vyn-Assistant
+```
+```bash
 # Install dependencies
 pip install PyQt5 speechrecognition
-
+```
+```bash
 # Install Ollama and Mistral model
 curl https://ollama.ai/install.sh | sh
 ollama pull mistral
